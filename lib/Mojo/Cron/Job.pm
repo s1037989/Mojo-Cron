@@ -11,6 +11,7 @@ has app => sub { Mojo::Server->new->build_app('Mojo::HelloWorld') };
 has server => sub { Mojo::Server->new };
 has crontab => sub { die };
 has cron => sub { die };
+has mojo_cron => sub { die };
 has time => sub { time };
 has name => sub { ref shift };
 has [qw/server job/];
@@ -19,6 +20,7 @@ sub run { croak "method 'run' not implemented by class"; }
 
 sub start {
   my ($self) = @_;
+  return if $self->mojo_cron->jobs->{$self->name};
   my $crontab = Time::Crontab->new($self->crontab);
   return unless $crontab->match($self->time);
   my $job = $self->cron->ioloop->subprocess->run(
@@ -31,6 +33,7 @@ sub start {
     sub {
       my ($subprocess, $err, @results) = @_;
       my $pid = $subprocess->pid;
+      delete $self->mojo_cron->jobs->{$self->name};
       $self->app->log->error(sprintf 'Cron Job %s %s exited: %s', $self->name, $pid, $err) and return if $err;
       $self->app->log->info(sprintf "Cron Job %s %s exited: @results", $self->name, $pid);
     }
@@ -38,6 +41,7 @@ sub start {
   $self->server->on(finish => sub {
     my ($server, $graceful) = @_;
     $self->app->log->info(sprintf "Ended cron job subprocess %s %s %s", $job->pid, ref $server, $graceful||0);
+    delete $self->mojo_cron->jobs->{$self->name};
     #$job->ioloop->stop if $job->ioloop->is_running;
   });
   $self->app->log->info(sprintf 'Started Cron Job %s on %s', $self->name, $job->pid);

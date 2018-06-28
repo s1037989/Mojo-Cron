@@ -6,12 +6,11 @@ use Mojo::Server;
 use Mojo::Loader qw(find_modules load_class);
 use Mojo::Util 'camelize';
 
-use Time::Piece;
-
 has app => sub { Mojo::Server->new->build_app('Mojo::HelloWorld') };
 has server => sub { Mojo::Server->new };
 has name => 'cron';
 has namespaces => sub { [camelize(shift->app->moniker).'::Cron'] };
+has jobs => sub { {} };
 
 sub start {
   my ($self) = @_;
@@ -19,10 +18,7 @@ sub start {
     sub {
       my $cron = shift;
       $self->_set_process_name($self->name);
-      sleep 59 - localtime->sec;
-      $cron->ioloop->timer(1 => sub { $self->_start($cron) });
-      sleep 1;
-      $cron->ioloop->recurring(60 => sub { $self->_start($cron) });
+      $cron->ioloop->recurring(1 => sub { $self->_start($cron) unless localtime->sec });
       $self->server->on(finish => sub {
         my ($server, $graceful) = @_;
         $self->app->log->info(sprintf "Ended cron subprocess %s %s %s", $$, ref $server, $graceful||0);
@@ -31,7 +27,7 @@ sub start {
       $cron->ioloop->start unless $cron->ioloop->is_running;
     },
     sub {
-      $self->app->log->error("I've never seen this");
+      $self->app->log->error("I've never seen this: $_[1]");
     }
   );
   $self->app->log->info(sprintf 'Started cron subprocess %s', $cron->pid);
@@ -48,8 +44,8 @@ sub _start {
     my $e = load_class $module;
     $self->app->log->warn(sprintf 'Loading "%s" failed: %s', $module, $e) and next if ref $e;
 
-    my $job = $module->new(app => $self->app, cron => $cron, server => $self->server, time => $time);
-    $job->start;
+    my $job = $module->new(mojo_cron => $self, app => $self->app, cron => $cron, server => $self->server, time => $time)->start or next;
+    $self->jobs->{$job->name} = $job->job->pid;
   }
 }
 
