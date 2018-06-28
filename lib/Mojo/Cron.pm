@@ -6,6 +6,8 @@ use Mojo::Server;
 use Mojo::Loader qw(find_modules load_class);
 use Mojo::Util 'camelize';
 
+use Time::Piece;
+
 has app => sub { Mojo::Server->new->build_app('Mojo::HelloWorld') };
 has server => sub { Mojo::Server->new };
 has name => 'cron';
